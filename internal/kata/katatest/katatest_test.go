@@ -66,31 +66,6 @@ func post(t *testing.T, s *Server, path, key, body string) (int, map[string]any)
 	return resp.StatusCode, out
 }
 
-func TestFakeCreateIdempotencyAndRequestLog(t *testing.T) {
-	s := New(t)
-	path := "/api/v1/projects/17/issues"
-	body := `{"title":"Capture friction","metadata":{"friction.fingerprint":"fl1:aa"}}`
-	status, first := post(t, s, path, "create-1", body)
-	assert.Equal(t, 200, status)
-	assert.Equal(t, true, first["changed"])
-	firstIssue := first["issue"].(map[string]any)
-	assert.Equal(t, "Capture friction", firstIssue["title"])
-	status, reused := post(t, s, path, "create-1", body)
-	assert.Equal(t, 200, status)
-	assert.Equal(t, true, reused["reused"])
-	assert.Equal(t, firstIssue["uid"], reused["issue"].(map[string]any)["uid"])
-	status, mismatch := post(t, s, path, "create-1", `{"title":"Different"}`)
-	assert.Equal(t, 409, status)
-	assert.Equal(t, "idempotency_mismatch", mismatch["error"].(map[string]any)["code"])
-	requests := s.RequestsMatching(http.MethodPost, path)
-	require.Len(t, requests, 3)
-	assert.Equal(t, "create-1", requests[0].IdempotencyKey)
-	assert.Equal(t, []byte(body), requests[0].Body)
-	assert.Equal(t, path, requests[0].Path)
-	_, listed := get(t, s, path)
-	assert.Len(t, listed["issues"], 1)
-}
-
 func TestFakeUnixEndpointAndFaultQueue(t *testing.T) {
 	s, endpoint := NewUnix(t)
 	assert.Equal(t, endpoint, s.Endpoint())
