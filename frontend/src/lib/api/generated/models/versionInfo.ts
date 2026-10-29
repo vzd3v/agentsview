@@ -9,6 +9,8 @@ export interface VersionInfo {
   commit: string;
   data_version: number;
   friction_available: boolean;
+  friction_build_allowed: boolean;
+  friction_readable?: boolean;
   insight_generation_available: boolean;
   read_only?: boolean;
   session_stats_available: boolean;

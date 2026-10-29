@@ -1029,8 +1029,8 @@ type Config struct {
 	// paths.
 	SyncIncludeCwdPrefixes []string `json:"-" toml:"sync_include_cwd_prefixes"`
 
-	// ScanProtectedPaths allows local Git discovery to read working
-	// directories inside macOS locations guarded by a TCC consent prompt
+	// ScanProtectedPaths allows local Git and skill metadata discovery to
+	// read paths inside macOS locations guarded by a TCC consent prompt
 	// (Documents, Downloads, Desktop, iCloud Drive, cloud-provider folders
 	// such as Dropbox, and removable or network volumes under /Volumes). It
 	// defaults to false so a first sync never
@@ -1057,6 +1057,8 @@ type Config struct {
 	// pass. CLI/config-file only; never serialized to the
 	// settings API, so there is no web-UI editing of this list.
 	RemoteHosts []RemoteHost `json:"-" toml:"-"`
+	// ArchiveSources is file-only configuration, never exposed by settings APIs.
+	ArchiveSources []ArchiveSource `json:"-" toml:"-"`
 
 	// HostExplicit is true when the user passed --host on the CLI.
 	// Used to prevent auto-bind to 0.0.0.0 when the user
@@ -1818,12 +1820,22 @@ func (c *Config) applyConfigTOML(data string) error {
 		EventsCoalesceInterval         time.Duration          `toml:"events_coalesce_interval"`
 		DaemonIdleTimeout              time.Duration          `toml:"daemon_idle_timeout"`
 		RemoteHosts                    []RemoteHost           `toml:"remote_hosts"`
+		ArchiveSources                 []ArchiveSource        `toml:"archive_sources"`
 		SessionSources                 []sessionSourceConfig  `toml:"session_sources"`
 		ModelAliases                   map[string]string      `toml:"model_aliases"`
 	}
 	meta, err := toml.Decode(data, &file)
 	if err != nil {
 		return fmt.Errorf("parsing config: %w", err)
+	}
+	for _, key := range meta.Undecoded() {
+		if len(key) > 0 && key[0] == "archive_sources" {
+			return fmt.Errorf("unknown archive source setting %s", key.String())
+		}
+	}
+	c.ArchiveSources = file.ArchiveSources
+	if err := c.ValidateArchiveSources(); err != nil {
+		return err
 	}
 	if meta.IsDefined("vector") {
 		if err := rejectUnknownVectorKeys(meta); err != nil {

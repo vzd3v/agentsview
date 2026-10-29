@@ -612,7 +612,18 @@ CREATE INDEX IF NOT EXISTS idx_provider_freshness_updated_at
 // (150: keep token usage on Claude assistant records that render no text, such
 // as blank thinking. Re-parse Claude-format sources in place; source and
 // session identities are unchanged.)
-const dataVersion = 150
+// (151: record kiro-cli subagent spawns as Task calls linked to the subagent
+// sessions. Re-parse Kiro sources in place; source and session identities are
+// unchanged.)
+// (152: Codex cloud tool calls no longer copy the call into message text,
+// and each file of a change carries its own path and diff as input. Re-parse
+// Codex cloud sources in place; source and session identities are unchanged.)
+// (153: show images Codex generates, in local rollouts and Codex Cloud, as
+// tool-result images. Re-parse Codex-format and Codex Cloud sources in place;
+// source and session identities are unchanged.)
+// (154: repair growing VS Code-format replies. Re-parse VS Code Copilot and
+// Positron sources in place; source and session identities are unchanged.)
+const dataVersion = 154
 
 const archiveOnlyVersionBase = 1 << 20
 
@@ -831,6 +842,7 @@ type DB struct {
 	path                 string
 	writer               atomic.Pointer[sql.DB]
 	reader               atomic.Pointer[sql.DB]
+	reads                readRegistry
 	usageCache           *usageCacheManager
 	activityMemo         activityCandidateMemo
 	usageBackfillMu      sync.Mutex
@@ -859,6 +871,8 @@ type DB struct {
 	assetsDir        string
 	// archiveContent indexes archiveContentRanks; see SetArchiveContent.
 	archiveContent atomic.Int32
+	// Rebuilds reserve attached IDs before their session rows are restored.
+	archiveRebuildProvenance atomic.Pointer[map[string]ArchiveSessionProvenance]
 	// writerClosed is set while the writer pool is intentionally closed for a
 	// worker maintenance pass (CloseWriter). It lets write attempts report
 	// ErrWriterClosed instead of the generic read-only error.
@@ -4652,14 +4666,8 @@ func openAndInit(
 		return nil, fmt.Errorf("configuring wal: %w", err)
 	}
 
-	reader, err := sql.Open(sqliteArchiveDriverName, makeDSN(path, true))
-	if err != nil {
-		writer.Close()
-		return nil, fmt.Errorf("opening reader: %w", err)
-	}
-	configureReaderPool(reader)
-
 	db := &DB{path: path, usageCache: newUsageCacheManager(path)}
+	reader := db.openReader(path)
 	db.usageCache.attachArchive(db)
 	db.writer.Store(writer)
 	db.reader.Store(reader)
@@ -5438,14 +5446,7 @@ func (db *DB) reopenLockedWithBarrier(keepWriterBarrier bool) error {
 		return fmt.Errorf("configuring reopened writer: %w", err)
 	}
 
-	reader, err := sql.Open(
-		sqliteArchiveDriverName, makeDSN(db.path, true),
-	)
-	if err != nil {
-		writer.Close()
-		return fmt.Errorf("reopening reader: %w", err)
-	}
-	configureReaderPool(reader)
+	reader := db.openReader(db.path)
 
 	db.connMu.Lock()
 	retired := append([]*sql.DB(nil), db.retired...)

@@ -11,6 +11,17 @@ The latest release is
 
 **New features**
 
+- `agentsview agents` lists every supported agent, where AgentsView looks for its
+  sessions, and which session details it reads, such as tool calls, thinking,
+  subagents, and token usage. Add `--json` for scripts. It works without a
+  daemon, configuration, or database.
+
+- `pg status` and `clickhouse status` show when the push watcher last pushed
+  successfully and, while pushes fail, since when and why. Run them with
+  `--max-stale 10m` from a timer or monitor to get an alert when pushes keep
+  failing for any reason, a push hangs, or the watcher stops pushing. Right
+  after a machine wakes from sleep, the check can fail until the watcher's
+  next push.
 - Assistants connected through MCP can now explain where one session's cost came
   from. The new `get_session_usage` tool reports the same tokens and cost as
   `agentsview session usage`, split by model and by request, with the most
@@ -30,6 +41,10 @@ The latest release is
   blindness. Past the tenth series, colors repeat with a pattern: hatched
   Usage bars, areas, and treemap tiles, and dashed Trends lines.
 
+- Read usage for several sessions in one process with
+  `session usage-batch <id>...`. JSON returns one ordered result per requested
+  ID, including individual errors.
+
 - PostgreSQL and ClickHouse push services can use a separately managed
   collector with `service install --no-start-daemon`, avoiding competing daemons
   and archive write locks during restarts. The push service exits if no writable
@@ -40,8 +55,23 @@ The latest release is
   catches up on completed days missed while offline, including sessions that
   arrive late within the configured backfill window. Digests retain findings,
   usage, and pattern recurrence, and survive full resyncs that retain transcript
-  text. PostgreSQL hubs build their own digests. Read APIs and CLI commands
-  remain planned.
+  text. PostgreSQL hubs build their own digests.
+
+- Friction Log digests, findings, and recurring patterns can be read over the
+  HTTP API, and `POST /api/v1/friction/run` builds missing days on demand.
+  Digests come back as JSON or Markdown. PostgreSQL hubs serve the same routes;
+  DuckDB and ClickHouse mirrors answer 501 because they do not store friction
+  tables.
+
+- The **Friction Log page** opens the latest daily digest with P0 alerts and new
+  or recurring patterns first, then each kind of finding with a link to the
+  session message. The session signal panel lists the open session's findings,
+  and Quality links to the page.
+
+- `agentsview friction run`, `digest`, `findings`, and `patterns` build and read
+  the Friction Log from the terminal, and MCP clients can read digests and
+  recurring patterns with `get_friction_digest` and `list_friction_patterns`.
+
 - Container deployments can pass the embeddings API key for PostgreSQL recipe
   adoption in `AGENTSVIEW_EMBEDDINGS_API_KEY` instead of mounting a key file.
   Setting it together with `AGENTSVIEW_EMBEDDINGS_API_KEY_FILE` stops startup.
@@ -82,6 +112,12 @@ The latest release is
 - Command Code v3 sessions appear with their titles, tool calls, and token
   costs. Forks count only new usage, and existing sessions are reprocessed
   on upgrade.
+- PostgreSQL content searches in `fts` mode honor `AND`, `OR`, `NOT`, and
+  parentheses in quoted queries and report malformed expressions as input
+  errors.
+- Snippets for `fts` and hybrid searches that use `OR` or `NOT` now show the
+  word that matched. Before, a message that matched only a later `OR` term
+  could show an excerpt without it.
 - Foreground `agentsview serve` now exits with status 1 when a server is already
   running so service managers retry. `serve --background` and `daemon start`
   still exit with status 0.
@@ -98,6 +134,18 @@ The latest release is
   instead of a blank page. VS Code saves each web fetch as two tool calls with
   the same ID, and AgentsView now keeps only the visible one. Existing VS Code
   Copilot, Positron, and Windsurf sessions are reprocessed on upgrade.
+- VS Code Copilot and Positron replies now update when synced while the agent
+  is still answering. Existing sessions are reprocessed on upgrade to recover
+  replies stored before completion. Pins keep their notes as replies change.
+  During upgrades, full rebuilds, and PostgreSQL pushes, pins on older replies
+  keep their notes when the unchanged prompt and request timestamp uniquely
+  identify the reply, including pins saved only in PostgreSQL.
+- Kiro CLI subagent runs now appear as child sessions of the session that
+  started them, including subagents started by other subagents. The parent
+  transcript shows each delegation with its prompt and result, and links to the
+  subagent's session. A failed delegation counts as a tool failure in the
+  session's health signals. Existing Kiro sessions are reprocessed on upgrade
+  to pick up past subagent runs.
 - A forked Codex session now appears as a fork of the session it came from, the
   way forks from other agents already do. Before, it showed up as an unrelated
   top-level session. Existing Codex, TraeX, and Augure Code sessions are

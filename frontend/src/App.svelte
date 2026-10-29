@@ -11,28 +11,37 @@
   ): number | undefined {
     if (!userVisible) return;
 
-    const isUserPrompt = (item: PromptDisplayItem) =>
-      item.kind === "message" &&
-      item.message.role === "user" &&
-      !item.message.is_system;
-    const selectedIndex = items.findIndex((item) =>
-      item.ordinals.includes(selected ?? -1),
-    );
+    // One stop per displayed message, so each prompt in an empty group is
+    // its own stop.
+    const stops = items.flatMap((item) => {
+      switch (item.kind) {
+        case "message":
+          return [{
+            ordinal: item.ordinals[0]!,
+            prompt: item.message.role === "user" && !item.message.is_system,
+          }];
+        case "tool-group":
+          return item.ordinals.map((ordinal) => ({ ordinal, prompt: false }));
+        case "empty-group":
+          return item.messages.map((message) => ({
+            ordinal: message.ordinal,
+            prompt: message.role === "user",
+          }));
+      }
+    });
+    const selectedIndex = stops.findIndex((stop) => stop.ordinal === selected);
     if (selectedIndex < 0) {
-      const prompts = items.filter(isUserPrompt);
-      return (delta > 0 ? prompts[0] : prompts[prompts.length - 1])
-        ?.ordinals[0];
+      const prompts = stops.filter((stop) => stop.prompt);
+      return (delta > 0 ? prompts[0] : prompts[prompts.length - 1])?.ordinal;
     }
 
     for (
       let index = selectedIndex + delta;
-      index >= 0 && index < items.length;
+      index >= 0 && index < stops.length;
       index += delta
     ) {
-      const item = items[index]!;
-      if (isUserPrompt(item)) {
-        return item.ordinals[0];
-      }
+      const stop = stops[index]!;
+      if (stop.prompt) return stop.ordinal;
     }
   }
 </script>
@@ -64,6 +73,7 @@
   import TrendsPage from "./lib/components/trends/TrendsPage.svelte";
   import RecallPage from "./lib/components/recall/RecallPage.svelte";
   import QualityPage from "./lib/components/quality/QualityPage.svelte";
+  import FrictionPage from "./lib/components/friction/FrictionPage.svelte";
   import PinnedPage from "./lib/components/pinned/PinnedPage.svelte";
   import TrashPage from "./lib/components/trash/TrashPage.svelte";
   import RecentEditsPage from "./lib/components/recentedits/RecentEditsPage.svelte";
@@ -895,6 +905,10 @@
 {:else if router.route === "quality"}
   <div class="page-scroll">
     <QualityPage />
+  </div>
+{:else if router.route === "friction"}
+  <div class="page-scroll">
+    <FrictionPage />
   </div>
 {:else if router.route === "pinned"}
   <div class="page-scroll">

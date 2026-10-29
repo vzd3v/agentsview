@@ -140,6 +140,14 @@ evidence; they do not establish whether a tool helped the task.
 
 ## Claude Code (`claude`)
 
+- **Protected skill paths (2026-10-28):** Reverified against a local Claude
+  transcript containing a `tool_use` block named `Read` with `input.file_path`
+  pointing to a `SKILL.md` in Downloads. Shared local skill inference applies
+  the macOS protected-path policy before reading frontmatter, including
+  through directory symlinks. `TestSkillInferenceSkipsProtectedPaths` covers
+  this with synthetic files, the explicit opt-in, and ordinary unprotected
+  paths. No producer format changed.
+
 - **Blank thinking usage (2026-10-27):** Reverified against the synthetic
   transcript in [#2469](https://github.com/kenn-io/agentsview/issues/2469),
   kept in `internal/parser/testdata/claude/blank_thinking_usage.jsonl`. An
@@ -620,6 +628,27 @@ fixtures retain this field; missing identities remain source-local.
   and review that loss when curating a screenshot generation. The corpus
   procedure does not change the parser or claim complete conversation
   retention.
+
+- **Generated images (checked 2026-10-29 at
+  `3535c22b43e5d7a67322f6e85b267ef65577c227`):** The pinned
+  [response schema](https://github.com/openai/codex/blob/3535c22b43e5d7a67322f6e85b267ef65577c227/codex-rs/protocol/src/models.rs)
+  defines `ImageGenerationCall`, serialized as `image_generation_call` with
+  an optional `id`, `status`, an optional `revised_prompt`, and a string
+  `result`. The
+  [rollout policy](https://github.com/openai/codex/blob/3535c22b43e5d7a67322f6e85b267ef65577c227/codex-rs/rollout/src/policy.rs)
+  persists that response item in every history mode, and in legacy mode also
+  keeps an `image_generation_end` event that repeats `call_id`, `status`,
+  `revised_prompt`, and `result` and adds `saved_path`. A field-shape check of
+  local rollouts on 2026-10-29 matched both records; `result` held base64 PNG
+  data of about 2.7 MB. Agentsview reads only the response item. It stores the
+  item without `result` as the call input and the image as one `input_image`
+  block in the call's result, so the storage image policy owns the payload and
+  the session viewer shows the image. A `result` that is not strict base64 of
+  a PNG, JPEG, WebP, or GIF image stays in the input, and an item with no `id`
+  keeps no result. TraeX and Augure Code share this parser. Data version 153
+  reparses these providers in place. Covered by
+  `TestCodexGeneratedImageStoredAsImageResult` and
+  `TestCodexGeneratedImageUpgradeReparsesUnchangedSource`.
 
 - **Dialogue classification (checked 2026-10-22):** The pinned
   [response schema](https://github.com/openai/codex/blob/c71297b9a9b3f7995445eff8d768837814ac06f8/codex-rs/protocol/src/models.rs#L31-L96)
@@ -2591,6 +2620,23 @@ schemas keep their existing ordering behavior.
   output VS Code renders elsewhere, such as file edits and todo lists, so
   Agentsview keeps hidden calls and only collapses repeated IDs. It keeps one
   call per `toolCallId`, preferring a visible invocation over a hidden one.
+- **Growing responses (2026-10-29):** A request's response can grow through
+  successive `kind: 2` pushes after its first sync, as reported in
+  [agentsview#2455](https://github.com/kenn-io/agentsview/issues/2455).
+  Reverified against `requestSchema.response` in the pinned
+  [chatSessionOperationLog.ts](https://github.com/microsoft/vscode/blob/693614c9f239b49f6d13d55da7f1a851d5b82c36/src/vs/workbench/contrib/chat/common/model/chatSessionOperationLog.ts),
+  which tracks the response array's mutations. VS Code Copilot and Positron
+  sync replace existing messages; data version 154 reparses their sources in
+  place to repair replies already stored before completion. Nonempty native
+  `requestId` values identify user and assistant messages with distinct
+  provider and role prefixes, so pins survive changing tool summaries. Older
+  replies gain that pin identity only when the unchanged user prompt and
+  nonzero request timestamp identify one request in both transcripts and the
+  incoming assistant ID is unique. Ordinary sync, full rebuilds, and
+  PostgreSQL pushes share that guarded conversion. PostgreSQL pushes match
+  remote pins against the incoming publication snapshot, preserving
+  remote-only pins and their notes. Windsurf's synthesized request IDs remain
+  excluded from message identity.
 - **Session names (2026-09-30):** The session's `customTitle` holds both a name
   set with `/rename` and the title VS Code generates after the first request;
   nothing marks which one it is. See `setSessionTitle` and
@@ -3436,6 +3482,14 @@ schemas keep their existing ordering behavior.
   an empty preview, and the default `thread/list` never returns it. AgentsView
   never imports it, so its delegated threads show as top-level sessions whose
   parent is not in the archive.
+- **Tool items:** A read-only survey of the maintainer's mirror files on
+  2026-10-29 found every `commandExecution` item's `command` is one string,
+  such as `/bin/bash -lc "..."`, next to a `cwd` string. Each `fileChange`
+  entry in `changes` is `{path, kind, diff}`, where `kind` is `{type}` or
+  `{type, move_path}`. Every `update` diff starts with a `@@` hunk header; no
+  `add` diff does. The parser stores each entry as its file's call input. Each
+  tool item's message text is the codex parser's tool marker, such as `[Bash]`
+  and `$ <command>`, which the viewer hides behind the tool block.
 - **Usage and cost:** The hosted thread history carries no token counts. Token
   counts come only from `thread/tokenUsage/updated` notifications while
   AgentsView is joined to a running thread; counters arrive as JSON numbers
@@ -3488,6 +3542,23 @@ schemas keep their existing ordering behavior.
   login found it answers `thread/goal/get`: both chats it listed returned
   `{"goal": null}`. AgentsView assumes the hosted resume runs the same idle
   step.
+- **Items with no text:** A read-only survey of the maintainer's mirror files on
+  2026-10-29 found `agentMessage` items with `phase: "final_answer"` and an
+  empty `text`. Four of the five ended a turn whose last tool item was
+  `imageGeneration`. It also found one `userMessage` whose only content part
+  was `{"type": "text", "text": "", "text_elements": []}`, with no image part.
+  AgentsView stores items as the server returned them, so the server sent
+  these items empty. The parser keeps each one as a message because each marks
+  a real turn. The transcript shows a run of consecutive empty messages as one
+  collapsed row.
+- **Generated images (2026-10-29):** An `imageGeneration` item carries `id`,
+  `status`, `revisedPrompt`, and `result`, where `result` is base64 image data
+  (`no-public-source`; the shape came from a session the maintainer viewed).
+  Agentsview handles it like the local Codex `image_generation_call`: the item
+  without `result` becomes the call input, and the image becomes one
+  `input_image` result block. A `result` that is not a supported image stays
+  in the input. Data version 153 reparses Codex Cloud mirrors in place.
+  Covered by `TestCodexCloudGeneratedImageBecomesImageResult`.
 - **Agentsview:** `internal/codexcloud/` fetches and mirrors threads;
   `internal/parser/codex_cloud_provider.go` discovers mirror files. Design,
   limits, and open probes: [codex-cloud-source.md](codex-cloud-source.md).
@@ -3523,6 +3594,20 @@ schemas keep their existing ordering behavior.
     producer schema source. For duplicate IDs, SQLite outranks current JSONL,
     current outranks legacy JSONL, configured root order breaks ties within a
     class, and recency then canonical path provide deterministic ties.
+
+    kiro-cli writes each subagent's transcript, including subagents spawned by
+    other subagents, flat at `sess_<id>/sub-executions/<subSessionId>.jsonl` in
+    the same envelope as `messages.jsonl`. The spawning transcript records a
+    `sub_agent_start` (`subSessionId`, `subAgentName`, `prompt`, `explanation`)
+    and a `sub_agent_complete` (`subSessionId`, `status`, `response`,
+    `errorMessage`); it writes no `tool_call` for the spawn, and record `id`
+    values can repeat, so `subSessionId` is the pairing key. This layout was
+    observed in local kiro-cli 2.34.1 output on 2026-10-27: every
+    `sub_agent_start` had a matching sub-executions file, `response` was always
+    a string, and failed spawns could also set `errorMessage`. Rechecked against
+    local kiro-cli 2.34.2 output the same day: every `sub_agent_complete`
+    `status` was `success` or `error`, and every ordinary `tool_result` record
+    carried a `success` boolean or null. There is no producer schema.
 
 - **Evidence:** `documentation`.
 
@@ -3563,6 +3648,25 @@ schemas keep their existing ordering behavior.
   `session.json` and the legacy JSONL sidecar carry a `title`, which
   Agentsview uses as the session name; the SQLite generation carries none. The
   first message falls back to the title only when there is no user message.
+
+    Each sub-executions file is its own source; only regular `<id>.jsonl` files
+    directly inside `sub-executions` count. A `subSessionId` shaped like a
+    session directory (`sess_<id>`) is ignored in spawn records and file names,
+    because `kiro:sess_<id>` would collide with that session. Each spawn becomes
+    an `invoke_subagent` Task tool call and result; the result records `success`
+    as `completed` and `error` as `errored`, so a failed delegation counts in
+    tool health, and leaves any other value unknown. Ordinary `tool_result`
+    records' `success` is not read. Each subagent becomes session
+    `kiro:<subSessionId>`, parsed from its own transcript only, with the project
+    and working directory of its session's `session.json`. The parser links it
+    to the session whose directory holds it; the subagent linker then moves a
+    nested subagent onto the subagent whose Task call names it. Subagent
+    sessions carry no name, because `subAgentName` lives only in the spawning
+    transcript. Data version 151 reparses Kiro sources in place so archived
+    sessions gain their Task calls. Limit: a session whose SQLite duplicate
+    outranks its current JSONL source is parsed from SQLite, which is not read
+    for spawns, so it records no Task calls; its subagents still sync from their
+    own transcripts.
 
 ## Kiro IDE (`kiro-ide`)
 
