@@ -747,6 +747,13 @@ func (b *QueryBuilder) MachinePredicate(sessionIDExpr, machineExpr string, value
 	return b.dialect.machinePredicate(sessionIDExpr, machineExpr, placeholders)
 }
 
+// WithOrphanPredicate overrides the missing-parent test when a query already
+// provides resolved parent edges.
+func (d QueryDialect) WithOrphanPredicate(predicate func(string, string) string) QueryDialect {
+	d.orphanPredicate = predicate
+	return d
+}
+
 func (d QueryDialect) ParentRelation(child, parent string) string {
 	if d.parentRelation != nil {
 		return d.parentRelation(child, parent)
