@@ -125,9 +125,9 @@ The latest release is
 - Hosted imports avoid fetching a transcript from PostgreSQL again when the same
   transaction has just saved that captured version.
   Existing content identities are preserved.
-- Hosted PostgreSQL searches and session reads no longer fail solely because
-  newly accepted raw captures are waiting for processing. Changes to published
-  content or public identities still cause reads to retry.
+- Hosted PostgreSQL searches and session reads stay available while raw captures
+  arrive and transcripts are published. Each hosted read uses one database
+  snapshot for its content, public identities and related data.
 - Oh My Pi subagent runs now appear under the correct parent, including runs
   started by other subagents. Newer OMP transcripts that record parent file paths
   are supported alongside older transcripts. Available OMP sources are
