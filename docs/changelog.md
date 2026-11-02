@@ -132,6 +132,8 @@ The latest release is
 - Hosted PostgreSQL searches and session reads stay available while raw captures
   arrive and transcripts are published. Each hosted read uses one database
   snapshot for its content, public identities and related data.
+- Hosted updates load prior transcript content only when provider history needs
+  it, retaining metadata without decoding an unused older transcript.
 - Oh My Pi subagent runs now appear under the correct parent, including runs
   started by other subagents. Newer OMP transcripts that record parent file paths
   are supported alongside older transcripts. Available OMP sources are
